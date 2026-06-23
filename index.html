@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Найди такой же</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; font-family:"Segoe UI",Arial,sans-serif;
+    background:#10254d; color:#fff; user-select:none; }
+  #app { position:fixed; inset:0; display:flex; flex-direction:column;
+    background:radial-gradient(circle at 50% 18%, #2a4ea0 0%, #10254d 72%); }
+
+  #hud { display:flex; justify-content:center; align-items:center; gap:3vw;
+    padding:1.8vh 0 0; font-size:3.4vh; font-weight:800; text-shadow:0 2px 6px rgba(0,0,0,.5); }
+  #hud .pill { background:rgba(0,0,0,.25); border-radius:999px; padding:.5vh 2.4vh; }
+
+  #prompt { text-align:center; font-size:4.4vh; font-weight:800; margin-top:.5vh;
+    text-shadow:0 2px 8px rgba(0,0,0,.5); min-height:6vh; }
+
+  #targetWrap { flex:0 0 auto; display:flex; align-items:center; justify-content:center; margin-top:.3vh; min-height:1vh; }
+  #target { border-radius:5vh; background:#fff; display:flex; align-items:center; justify-content:center;
+    line-height:1; box-shadow:0 10px 30px rgba(0,0,0,.45); overflow:hidden; }
+  #target img { width:100%; height:100%; object-fit:cover; }
+
+  #options { flex:1 1 auto; display:flex; align-items:center; justify-content:center; padding:2vh 3vw 4vh; }
+  .opt { border-radius:5vh; background:#fff; display:flex; align-items:center; justify-content:center;
+    line-height:1; box-shadow:0 8px 22px rgba(0,0,0,.4); overflow:hidden;
+    border:1.1vh solid transparent; transition:transform .12s, border-color .12s; cursor:pointer; }
+  .opt img { width:100%; height:100%; object-fit:cover; }
+  .opt.sel { border-color:#ffd23f; transform:scale(1.07); box-shadow:0 0 0 .5vh #fff, 0 12px 30px rgba(0,0,0,.5); }
+  .opt.correct { border-color:#34c759; transform:scale(1.14); animation:pop .4s; }
+  .opt.wrong { border-color:#ff4d5e; animation:shake .4s; }
+  .opt.hint { animation:hintPulse 1s infinite; }
+  @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.24)} 100%{transform:scale(1.14)} }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-2vh)} 75%{transform:translateX(2vh)} }
+  @keyframes hintPulse { 0%,100%{box-shadow:0 0 0 0 rgba(52,199,89,0)} 50%{box-shadow:0 0 0 1.1vh rgba(52,199,89,.55)} }
+
+  #feedback { position:fixed; top:12vh; left:0; right:0; text-align:center; font-size:7.5vh; z-index:40;
+    font-weight:900; opacity:0; transition:opacity .2s; pointer-events:none; text-shadow:0 4px 14px rgba(0,0,0,.5); }
+  #feedback.show { opacity:1; }
+
+  #start { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(8,16,40,.92); z-index:20; text-align:center; }
+  #start h1 { font-size:8vh; margin-bottom:2vh; }
+  #start p { font-size:3.4vh; opacity:.85; margin-bottom:5vh; }
+  .btn { font-family:inherit; font-size:5vh; font-weight:900; color:#10254d; background:#ffd23f;
+    border:none; border-radius:999px; padding:2.2vh 8vh; cursor:pointer;
+    box-shadow:0 6px 0 #c89a00, 0 12px 26px rgba(0,0,0,.4); outline:6px solid #fff; }
+
+  .confetti { position:fixed; font-size:5vh; pointer-events:none; z-index:40; will-change:transform,opacity; }
+  #hint { position:fixed; bottom:1.2vh; left:0; right:0; text-align:center; font-size:2.2vh; opacity:.5; }
+  .key{ display:inline-block; background:#fff; color:#10254d; border-radius:7px; padding:.1vh 1.2vh; font-weight:800; margin:0 .3vh;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div class="pill">⭐ <span id="starCount">0</span></div>
+    <div class="pill">Уровень <span id="lvlCount">1</span></div>
+  </div>
+  <div id="prompt">Найди такой&nbsp;же!</div>
+  <div id="targetWrap"><div id="target"></div></div>
+  <div id="options"></div>
+</div>
+
+<div id="feedback"></div>
+<div id="start">
+  <h1>🔍 Найди такой же</h1>
+  <p>Посмотри, послушай — и выбери нужную картинку.</p>
+  <button class="btn" id="playBtn">Играть</button>
+</div>
+<div id="hint"><span class="key">◀</span><span class="key">▶</span> выбрать &nbsp;·&nbsp; <span class="key">OK</span> подтвердить</div>
+
+<script src="photos/photos.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ===== Content =====
+  const CATS = {
+    animals: ["🐱","🐶","🐰","🐻","🦊","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐦","🦆","🦉","🦄","🐝","🐢","🐠","🐬","🐳","🦋","🐞","🐙","🦒","🦓","🐘","🐎","🐐","🦌"],
+    fruits:  ["🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🫐","🍈","🍒","🍑","🥭","🍍","🥝","🍅","🥥"],
+    flowers: ["🌻","🌹","🌷","🌼","🌸","🌺","🌾"],
+    things:  ["☀️","🌙","⭐","🌟","🌈","❄️","🔥","💧","🎈","🎁","🎀","🔔","⚽","🏀","🚗","🚙","🚌","🚲","✈️","🚂","⛵","🏠","🏰","⛪","🌳","🌲","🎄","🍦","🍩","🍰","🧁","🍭"]
+  };
+  const ALL_EMOJI = [].concat(CATS.animals, CATS.fruits, CATS.flowers, CATS.things);
+  const CAT_NAMES = { animals:"животное", fruits:"фрукт", flowers:"цветок" };
+  function catOf(e){ for(const k in CATS) if(CATS[k].includes(e)) return k; return null; }
+
+  const COLORS = [
+    {n:"Красный",hex:"#e7322f"},{n:"Синий",hex:"#2f6fe7"},{n:"Зелёный",hex:"#34c759"},
+    {n:"Жёлтый",hex:"#ffd23f"},{n:"Оранжевый",hex:"#ff8a3d"},{n:"Фиолетовый",hex:"#a45cff"},
+    {n:"Розовый",hex:"#ff6fae"},{n:"Голубой",hex:"#48d6ff"}
+  ];
+
+  const PHOTOS = ((window.PHOTO_DATA && window.PHOTO_DATA.concepts) || []).filter(c=>c.files && c.files.length>=2);
+  const HAS_PHOTOS = PHOTOS.length >= 3;
+
+  // ===== Helpers =====
+  const rint = n => Math.floor(Math.random()*n);
+  const pick = a => a[rint(a.length)];
+  function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=rint(i+1);[a[i],a[j]]=[a[j],a[i]];} return a; }
+  function sampleUnique(pool,k,exclude){
+    const ex=new Set(exclude||[]); const out=[]; const p=shuffle(pool);
+    for(const x of p){ if(out.length>=k) break; if(!ex.has(x)){ out.push(x); ex.add(x);} }
+    return out;
+  }
+
+  // content renderers (functions of card pixel size -> html)
+  const E      = e        => sz => `<span style="font-size:${Math.round(sz*0.6)}px;line-height:1">${e}</span>`;
+  const E_SC   = (e,scale)=> sz => `<span style="font-size:${Math.round(sz*0.6*scale)}px;line-height:1">${e}</span>`;
+  const E_SHAD = e        => sz => `<span style="font-size:${Math.round(sz*0.6)}px;line-height:1;filter:brightness(0)">${e}</span>`;
+  const IMG    = src      => () => `<img src="${src}" alt="">`;
+  const DOT    = hex      => sz => `<div style="width:${Math.round(sz*0.66)}px;height:${Math.round(sz*0.66)}px;border-radius:50%;background:${hex}"></div>`;
+  const GROUP  = (e,k)    => sz => `<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:${Math.round(sz*0.03)}px;font-size:${Math.round(sz*0.24)}px;line-height:1;max-width:88%;max-height:88%">${e.repeat(k)}</div>`;
+  const ICON   = txt      => sz => `<span style="font-size:${Math.round(sz*0.55)}px;line-height:1">${txt}</span>`;
+
+  // ===== State =====
+  let stars=0, totalCorrect=0, audioOk=false, locked=false, wrongThisRound=0, bubbleActive=false;
+  let options=[], sel=0, spec=null;
+  const RPL = 3; // correct answers needed to pass a level
+
+  // ===== 25-level plan =====
+  const LEVELS = [
+    {m:"same",  n:2},                 // 1
+    {m:"same",  n:3},                 // 2
+    {m:"color", n:3},                 // 3
+    {m:"odd",   n:3},                 // 4
+    {m:"bubble"},                     // 5  🫧 bonus
+    {m:"same",  n:4, similar:true},   // 6
+    {m:"shadow",n:3},                 // 7
+    {m:"cat",   n:3},                 // 8
+    {m:"photo", n:2},                 // 9
+    {m:"color", n:4},                 // 10
+    {m:"odd",   n:4},                 // 11
+    {m:"bubble"},                     // 12 🫧 bonus
+    {m:"big",   n:3},                 // 13
+    {m:"photo", n:3},                 // 14
+    {m:"listen",n:3},                 // 15
+    {m:"shadow",n:4},                 // 16
+    {m:"count", n:3, max:3},          // 17
+    {m:"cat",   n:4},                 // 18
+    {m:"bubble"},                     // 19 🫧 bonus
+    {m:"big",   n:4, small:true},     // 20
+    {m:"photo", n:4},                 // 21
+    {m:"odd",   n:5},                 // 22
+    {m:"listen",n:4},                 // 23
+    {m:"count", n:4, max:4},          // 24
+    {m:"shadow",n:5},                 // 25
+    {m:"cat",   n:5},                 // 26
+    {m:"color", n:5},                 // 27
+    {m:"photo", n:4},                 // 28
+  ];
+  const MIX = ["same","color","odd","shadow","cat","big","count"].concat(HAS_PHOTOS?["photo","listen"]:[]);
+
+  function levelIndex(tc){ return Math.floor(tc/RPL); }
+  function defFor(tc){
+    const i = levelIndex(tc);
+    if (i < LEVELS.length) return { def:LEVELS[i], level:i+1, mixed:false };
+    // endless mixed mode, gently scaling option count
+    const n = 3 + (i % 3); // 3,4,5
+    return { def:{m:pick(MIX), n:n, similar:true, small:rint(2)===0, max:4}, level:i+1, mixed:true };
+  }
+
+  // ===== Mechanic builders -> {top, prompt, voice, options:[{html,correct}]} =====
+  function build(def){
+    switch(def.m){
+      case "same":   return mSame(def);
+      case "photo":  return HAS_PHOTOS ? mPhoto(def) : mSame(def);
+      case "color":  return mColor(def);
+      case "odd":    return mOdd(def);
+      case "shadow": return mShadow(def);
+      case "cat":    return mCat(def);
+      case "big":    return mBig(def);
+      case "count":  return mCount(def);
+      case "listen": return HAS_PHOTOS ? mListen(def) : mSame(def);
+      default:       return mSame(def);
+    }
+  }
+
+  function mSame(def){
+    const t = pick(ALL_EMOJI);
+    const pool = def.similar ? (CATS[catOf(t)]||ALL_EMOJI) : ALL_EMOJI;
+    const d = sampleUnique(pool, def.n-1, [t]);
+    const opts = shuffle([t].concat(d)).map(e=>({html:E(e), correct:e===t}));
+    return { top:E(t), prompt:"Найди такой же!", voice:"Найди такой же", options:opts };
+  }
+
+  function mPhoto(def){
+    const c = pick(PHOTOS);
+    const f = shuffle(c.files);
+    const others = sampleUnique(PHOTOS.filter(x=>x.key!==c.key), def.n-1, []);
+    const opts = shuffle(
+      [{html:IMG(f[1]), correct:true}].concat(others.map(o=>({html:IMG(pick(o.files)), correct:false})))
+    );
+    return { top:IMG(f[0]), prompt:"Найди такой же!", voice:c.label+". Найди такой же.", options:opts };
+  }
+
+  function mColor(def){
+    const t = pick(COLORS);
+    const d = sampleUnique(COLORS.filter(c=>c!==t), def.n-1, []);
+    const opts = shuffle([t].concat(d)).map(c=>({html:DOT(c.hex), correct:c===t}));
+    return { top:DOT(t.hex), prompt:"Найди такой же цвет", voice:"Найди такой же цвет", options:opts };
+  }
+
+  function mOdd(def){
+    const [a,b] = sampleUnique(ALL_EMOJI, 2, []);
+    const arr = [];
+    for(let i=0;i<def.n-1;i++) arr.push({html:E(a), correct:false});
+    arr.push({html:E(b), correct:true});
+    return { top:ICON("❓"), prompt:"Что лишнее?", voice:"Что лишнее?", options:shuffle(arr) };
+  }
+
+  function mShadow(def){
+    const t = pick(ALL_EMOJI);
+    const d = sampleUnique(ALL_EMOJI, def.n-1, [t]);
+    const opts = shuffle([t].concat(d)).map(e=>({html:E(e), correct:e===t}));
+    return { top:E_SHAD(t), prompt:"Чья это тень?", voice:"Чья это тень?", options:opts };
+  }
+
+  function mCat(def){
+    const catKey = pick(["animals","fruits","flowers"]);
+    const t = pick(CATS[catKey]);
+    const same = pick(CATS[catKey].filter(e=>e!==t));
+    const otherPool = ALL_EMOJI.filter(e=>catOf(e)!==catKey);
+    const d = sampleUnique(otherPool, def.n-1, []);
+    const opts = shuffle([{html:E(same),correct:true}].concat(d.map(e=>({html:E(e),correct:false}))));
+    const word = CAT_NAMES[catKey];
+    return { top:E(t), prompt:"Найди ещё "+word, voice:"Найди ещё "+word, options:opts };
+  }
+
+  function mBig(def){
+    const e = pick(ALL_EMOJI);
+    const scales = [0.45,0.62,0.8,1.0,1.18].slice(0, def.n);
+    const want = def.small ? Math.min(...scales) : Math.max(...scales);
+    const opts = shuffle(scales.map(s=>({html:E_SC(e,s), correct:s===want})));
+    const txt = def.small ? "Самый маленький" : "Самый большой";
+    return { top:null, prompt:txt, voice:"Найди: "+txt, options:opts };
+  }
+
+  function mCount(def){
+    const e = pick(["🍎","🔵","⭐","🍌","🐤","🌸"]);
+    const k = 1 + rint(def.max);
+    const counts = sampleUnique([1,2,3,4,5].filter(x=>x!==k), def.n-1, []).concat([k]);
+    const opts = shuffle(counts.map(c=>({html:GROUP(e,c), correct:c===k})));
+    return { top:GROUP(e,k), prompt:"Найди столько же", voice:"Найди столько же", options:opts };
+  }
+
+  function mListen(def){
+    const c = pick(PHOTOS);
+    const others = sampleUnique(PHOTOS.filter(x=>x.key!==c.key), def.n-1, []);
+    const opts = shuffle(
+      [{html:IMG(pick(c.files)), correct:true}].concat(others.map(o=>({html:IMG(pick(o.files)), correct:false})))
+    );
+    return { top:ICON("🔊"), prompt:"Слушай и найди", voice:c.label, options:opts, revoice:c.label };
+  }
+
+  // ===== Round / render =====
+  function newRound(levelUp){
+    locked=false; wrongThisRound=0;
+    const info = defFor(totalCorrect);
+    document.getElementById("lvlCount").textContent = info.level;
+    if(levelUp) celebrateLevel();
+    if(info.def.m==="bubble"){
+      const rows=Math.min(8, 3+Math.floor(info.level/4));     // grows: L5->4, L12->6, L19->7
+      const colors=Math.min(5, 3+Math.floor(info.level/8));   // grows: L5->3, L12->4, L19->5
+      startBubble(()=>{ const li=levelIndex(totalCorrect); totalCorrect=(li+1)*RPL; stars+=3; newRound(true); }, {rows,colors});
+      return;
+    }
+    try { spec = build(info.def); }
+    catch(e){ spec = mSame({n:2}); }
+    options = spec.options;
+    sel = Math.floor(options.length/2);
+    render();
+    document.getElementById("prompt").textContent = spec.prompt;
+    say(spec.voice);
+  }
+
+  function sizes(n){
+    const vw=window.innerWidth, vh=window.innerHeight;
+    const gap = vw*0.035;
+    const size = Math.floor(Math.min(vh*0.26, (vw*0.92 - gap*(n-1))/n));
+    return { size:Math.max(size,80), gap };
+  }
+
+  function render(){
+    const n = options.length;
+    const {size,gap} = sizes(n);
+    // target
+    const tw = document.getElementById("targetWrap");
+    const tg = document.getElementById("target");
+    if(spec.top){
+      const ts = Math.min(Math.floor(size*1.12), Math.floor(window.innerHeight*0.27));
+      tg.style.width=ts+"px"; tg.style.height=ts+"px"; tg.style.display="flex";
+      tg.innerHTML = spec.top(ts);
+      tw.style.minHeight = "";
+    } else {
+      tg.style.display="none";
+    }
+    // options
+    const box = document.getElementById("options");
+    box.style.gap = gap+"px";
+    box.innerHTML = "";
+    options.forEach((o,i)=>{
+      const d=document.createElement("div");
+      d.className="opt"+(i===sel?" sel":"");
+      d.style.width=size+"px"; d.style.height=size+"px";
+      d.innerHTML = o.html(size);
+      d.addEventListener("click", ()=>{ if(!locked){ sel=i; choose(); } });
+      box.appendChild(d);
+    });
+    document.getElementById("starCount").textContent = stars;
+  }
+
+  function move(dir){
+    if(locked) return;
+    sel = Math.max(0, Math.min(options.length-1, sel+dir));
+    [...document.querySelectorAll(".opt")].forEach((el,i)=>el.classList.toggle("sel", i===sel));
+  }
+
+  function choose(){
+    if(locked) return;
+    const cards = document.querySelectorAll(".opt");
+    if(options[sel].correct){
+      locked=true;
+      const before = defFor(totalCorrect).level;
+      stars++; totalCorrect++;
+      const after = defFor(totalCorrect).level;
+      cards[sel].classList.remove("sel"); cards[sel].classList.add("correct");
+      document.getElementById("starCount").textContent = stars;
+      banner(pick(["Молодец!","Отлично!","Правильно!","Умница!","Прекрасно!"]), "#34c759");
+      say(pick(["Молодец","Отлично","Правильно","Умница"]));
+      chime(true); confetti(12);
+      const leveled = after>before;
+      setTimeout(()=>newRound(leveled), leveled?2100:1500);
+    } else {
+      wrongThisRound++;
+      cards[sel].classList.add("wrong");
+      setTimeout(()=>cards[sel]&&cards[sel].classList.remove("wrong"),450);
+      banner(pick(["Почти!","Ещё разок","Попробуй ещё"]), "#ffd23f");
+      say(spec.revoice ? spec.revoice : pick(["Почти","Попробуй ещё раз"]));
+      chime(false);
+      const ci = options.findIndex(o=>o.correct);
+      if(wrongThisRound>=1 && cards[ci]) cards[ci].classList.add("hint");
+    }
+  }
+
+  // ===== FX =====
+  let bannerT=null;
+  function banner(text,color){
+    const f=document.getElementById("feedback");
+    f.textContent=text; f.style.color=color; f.classList.add("show");
+    clearTimeout(bannerT); bannerT=setTimeout(()=>f.classList.remove("show"),1300);
+  }
+  function celebrateLevel(){ banner("Новый уровень! 🏆","#ffd23f"); say("Новый уровень"); chime(true); confetti(40); }
+  function confetti(count){
+    const e=["🎉","✨","⭐","🌟","💫","🎊"];
+    for(let i=0;i<count;i++){
+      const s=document.createElement("span"); s.className="confetti"; s.textContent=pick(e);
+      s.style.left=(15+Math.random()*70)+"vw"; s.style.top="26vh"; document.body.appendChild(s);
+      const dx=(Math.random()*2-1)*45, dy=-(18+Math.random()*32), rot=(Math.random()*2-1)*360, dur=900+Math.random()*800;
+      s.animate([{transform:"translate(0,0) rotate(0)",opacity:1},
+        {transform:`translate(${dx}vw,${dy}vh) rotate(${rot}deg)`,opacity:1,offset:.3},
+        {transform:`translate(${dx*1.4}vw,64vh) rotate(${rot*1.6}deg)`,opacity:0}],
+        {duration:dur,easing:"ease-out"});
+      setTimeout(()=>s.remove(),dur);
+    }
+  }
+
+  // ===== Audio =====
+  let actx=null;
+  function ensureAudio(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
+  function chime(good){
+    ensureAudio(); if(!actx) return;
+    const notes = good?[523,659,784,1047]:[330,247];
+    notes.forEach((f,i)=>{ const o=actx.createOscillator(),g=actx.createGain();
+      o.type="sine"; o.frequency.value=f; const t=actx.currentTime+i*(good?0.09:0.14);
+      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.25,t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001,t+0.32);
+      o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+0.34); });
+  }
+  let ruVoice=null;
+  function loadVoices(){ const vs=window.speechSynthesis?speechSynthesis.getVoices():[];
+    ruVoice = vs.find(v=>/ru[-_]/i.test(v.lang)) || vs.find(v=>/russ/i.test(v.name)) || null; }
+  if(window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+  function say(text){ if(!audioOk||!window.speechSynthesis||!text) return;
+    try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text);
+      u.lang="ru-RU"; if(ruVoice)u.voice=ruVoice; u.rate=0.95; u.pitch=1.05; speechSynthesis.speak(u);
+    }catch(e){} }
+
+  // ===== Input =====
+  document.addEventListener("keydown",(e)=>{
+    const k=e.key;
+    if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Enter"].includes(k)) e.preventDefault();
+    if(bubbleActive) return;
+    if(document.getElementById("start").style.display!=="none"){ if(k==="Enter"||k===" ") startGame(); return; }
+    if(k==="ArrowLeft"||k==="ArrowUp") move(-1);
+    else if(k==="ArrowRight"||k==="ArrowDown") move(1);
+    else if(k==="Enter"||k===" ") choose();
+  });
+  window.addEventListener("resize", ()=>{ if(bubbleActive) return; if(spec) render(); });
+
+  function startGame(){
+    audioOk=true; ensureAudio(); loadVoices();
+    try{ if(window.speechSynthesis){ const w=new SpeechSynthesisUtterance(" "); w.lang="ru-RU"; speechSynthesis.speak(w);} }catch(e){}
+    document.getElementById("start").style.display="none";
+    stars=0; totalCorrect=0;
+    if(location.hash==="#bubble") startBubble(()=>{ totalCorrect=0; newRound(false); });
+    else newRound(false);
+  }
+  document.getElementById("playBtn").addEventListener("click", startGame);
+
+  // Dev shortcut: open index.html#bubble to jump straight into the bubble level.
+  if(location.hash==="#bubble"){
+    document.getElementById("start").style.display="none";
+    startBubble(()=>{ totalCorrect=0; newRound(false); });
+  }
+
+  // ===== Bubble shooter (bonus level) =====
+  // Shooter only fires colours still on the board -> as towers clear, choices
+  // narrow (e.g. only red & yellow left) so it's easy to finish.
+  function startBubble(onWin, opts){
+    opts = opts || {};
+    bubbleActive=true; spec=null;
+    document.getElementById("prompt").textContent="🫧";
+    const cv=document.createElement("canvas"); cv.id="bub";
+    cv.style.cssText="position:fixed;inset:0;z-index:10;background:radial-gradient(circle at 50% 25%,#20367a,#0d1b3e 72%)";
+    document.body.appendChild(cv);
+    const ctx=cv.getContext("2d");
+    const PAL=["#ff4d5e","#ffd23f","#34c759","#3aa0ff","#c46bff"];
+    const DARK=["#b3263a","#c89a00","#1f8a3c","#1f6fbf","#8a3fcf"];
+    const COLS=7, SPEEDK=0.5, AIMSTEP=1.6;
+    const START=Math.min(5, opts.colors||4), ROWS0=Math.min(9, opts.rows||4);
+    let R,ROWH,W,H,TOP,PW,OFF, grid=[], aim=90, cur=0, nxt=0, shot=null, pops=[], raf=0, won=false;
+    const held={l:false,r:false};
+
+    const colsIn=r=>(r&1)?COLS-1:COLS;
+    const gx=(r,c)=>OFF+R+((r&1)?R:0)+c*2*R;
+    const gy=r=>TOP+R+r*ROWH;
+    function onBoard(){ const s=new Set(); for(const row of grid) for(const v of row) if(v!=null) s.add(v); return [...s]; }
+    function pickC(){ const o=onBoard(); return o.length?o[rint(o.length)]:rint(START); }
+    function resize(){ W=cv.width=window.innerWidth; H=cv.height=window.innerHeight;
+      PW=Math.min(W*0.96, H*0.6); OFF=(W-PW)/2; R=PW/(COLS*2); ROWH=R*1.732; TOP=Math.max(H*0.06,40); }
+
+    function neigh(r,c){ const ev=!(r&1);
+      const cand=ev?[[r,c-1],[r,c+1],[r-1,c-1],[r-1,c],[r+1,c-1],[r+1,c]]
+                   :[[r,c-1],[r,c+1],[r-1,c],[r-1,c+1],[r+1,c],[r+1,c+1]];
+      return cand.filter(([rr,cc])=>rr>=0&&rr<grid.length&&cc>=0&&cc<grid[rr].length); }
+    function snap(){
+      let row=Math.round((shot.y-TOP-R)/ROWH); if(row<0)row=0;
+      let best=null,bd=1e9;
+      for(let dr=-1;dr<=1;dr++){ const rr=row+dr; if(rr<0||rr>=grid.length)continue;
+        for(let cc=0;cc<grid[rr].length;cc++){ if(grid[rr][cc]!=null)continue;
+          const dx=shot.x-gx(rr,cc),dy=shot.y-gy(rr),d=dx*dx+dy*dy; if(d<bd){bd=d;best=[rr,cc];} } }
+      if(!best){ shot=null; return; }
+      const [r,c]=best, col=shot.c; grid[r][c]=col; shot=null; resolve(r,c,col); if(!won) reconcile(); }
+    function reconcile(){ const o=onBoard(); if(!o.length)return;
+      if(!o.includes(cur)) cur=pick(o); if(!o.includes(nxt)) nxt=pick(o); }
+    function resolve(r,c,col){
+      const seen=new Set([r+","+c]), cl=[[r,c]], st=[[r,c]];
+      while(st.length){ const [cr,cc]=st.pop();
+        for(const [nr,nc] of neigh(cr,cc)){ const k=nr+","+nc;
+          if(!seen.has(k)&&grid[nr][nc]===col){ seen.add(k); st.push([nr,nc]); cl.push([nr,nc]); } } }
+      if(cl.length>=3){ for(const [pr,pc] of cl){ pop(pr,pc); grid[pr][pc]=null; } drop(); }
+      if(onBoard().length===0) win(); }
+    function drop(){
+      const safe=new Set(), st=[];
+      for(let c=0;c<grid[0].length;c++) if(grid[0][c]!=null){ safe.add("0,"+c); st.push([0,c]); }
+      while(st.length){ const [r,c]=st.pop();
+        for(const [nr,nc] of neigh(r,c)){ const k=nr+","+nc; if(!safe.has(k)&&grid[nr][nc]!=null){ safe.add(k); st.push([nr,nc]); } } }
+      for(let r=0;r<grid.length;r++) for(let c=0;c<grid[r].length;c++)
+        if(grid[r][c]!=null&&!safe.has(r+","+c)){ pop(r,c); grid[r][c]=null; } }
+    function pop(r,c){ pops.push({x:gx(r,c),y:gy(r),ci:grid[r][c],t:0}); }
+    function fire(){ if(shot||won)return; const a=aim*Math.PI/180, sp=Math.max(12,R*SPEEDK);
+      shot={x:OFF+PW/2,y:H-R*2.2,vx:Math.cos(a)*sp,vy:-Math.sin(a)*sp,c:cur}; cur=nxt; nxt=pickC(); }
+
+    function drawB(x,y,ci,sc){ sc=sc||1; const r=R*sc;
+      const g=ctx.createRadialGradient(x-r*0.35,y-r*0.35,r*0.1,x,y,r);
+      g.addColorStop(0,"#fff"); g.addColorStop(0.25,PAL[ci]); g.addColorStop(1,DARK[ci]);
+      ctx.beginPath(); ctx.arc(x,y,r*0.95,0,7); ctx.fillStyle=g; ctx.fill();
+      ctx.beginPath(); ctx.arc(x-r*0.3,y-r*0.32,r*0.2,0,7); ctx.fillStyle="rgba(255,255,255,.5)"; ctx.fill(); }
+    function drawAim(){ const a=aim*Math.PI/180; let x=OFF+PW/2,y=H-R*2.2,dx=Math.cos(a),dy=-Math.sin(a);
+      ctx.save(); ctx.setLineDash([R*0.5,R*0.6]); ctx.lineWidth=Math.max(3,R*0.16); ctx.strokeStyle="rgba(255,255,255,.5)";
+      ctx.beginPath(); ctx.moveTo(x,y); let n=0;
+      while(n<300){ x+=dx*R; y+=dy*R; if(x<OFF+R){x=OFF+R;dx=-dx;} if(x>OFF+PW-R){x=OFF+PW-R;dx=-dx;} if(y<TOP+R)break; ctx.lineTo(x,y); n++; }
+      ctx.stroke(); ctx.restore(); }
+    function draw(){ ctx.clearRect(0,0,W,H);
+      ctx.fillStyle="rgba(255,255,255,.05)";
+      if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(OFF, TOP-R*0.3, PW, H-(TOP-R*0.3), R*0.4); ctx.fill(); }
+      for(let r=0;r<grid.length;r++) for(let c=0;c<grid[r].length;c++) if(grid[r][c]!=null) drawB(gx(r,c),gy(r),grid[r][c]);
+      pops=pops.filter(p=>p.t<1); for(const p of pops){ p.t+=0.08; ctx.globalAlpha=1-p.t; drawB(p.x,p.y,p.ci,1+p.t*0.7); ctx.globalAlpha=1; }
+      if(!won){ drawAim(); drawB(OFF+PW/2,H-R*2.2,cur);
+        ctx.globalAlpha=0.85; drawB(OFF+PW-R*1.4,H-R*1.4,nxt,0.7); ctx.globalAlpha=1; }
+      if(shot) drawB(shot.x,shot.y,shot.c); }
+    function update(){ if(!shot)return;
+      shot.x+=shot.vx; shot.y+=shot.vy;
+      if(shot.x<OFF+R){shot.x=OFF+R;shot.vx=-shot.vx;} if(shot.x>OFF+PW-R){shot.x=OFF+PW-R;shot.vx=-shot.vx;}
+      let hit=shot.y<=TOP+R;
+      if(!hit){ outer: for(let r=0;r<grid.length;r++) for(let c=0;c<grid[r].length;c++) if(grid[r][c]!=null){
+        const dx=shot.x-gx(r,c),dy=shot.y-gy(r); if(dx*dx+dy*dy<(R*1.85)*(R*1.85)){hit=true;break outer;} } }
+      if(hit) snap(); }
+    function loop(){ if(!bubbleActive)return;
+      if(!won){ if(held.l) aim=Math.min(162,aim+AIMSTEP); if(held.r) aim=Math.max(18,aim-AIMSTEP); }
+      update(); draw(); raf=requestAnimationFrame(loop); }
+
+    function win(){ if(won)return; won=true; shot=null;
+      banner("Молодец! 🎉","#34c759"); say("Молодец"); chime(true); confetti(40);
+      setTimeout(()=>{ cleanup(); onWin(); }, 1600); }
+    function cleanup(){ bubbleActive=false; cancelAnimationFrame(raf);
+      window.removeEventListener("keydown",kd,true); window.removeEventListener("keyup",ku,true);
+      window.removeEventListener("resize",rsz); cv.remove(); }
+
+    function kd(e){ const k=e.key;
+      if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Enter"].includes(k)) e.preventDefault();
+      if(k==="ArrowLeft"||k==="ArrowUp") held.l=true;
+      else if(k==="ArrowRight"||k==="ArrowDown") held.r=true;
+      else if(k==="Enter"||k===" ") fire(); }
+    function ku(e){ const k=e.key;
+      if(k==="ArrowLeft"||k==="ArrowUp") held.l=false;
+      else if(k==="ArrowRight"||k==="ArrowDown") held.r=false; }
+    const rsz=()=>resize();
+    window.addEventListener("keydown",kd,true);
+    window.addEventListener("keyup",ku,true);
+    window.addEventListener("resize",rsz);
+
+    resize();
+    grid=[]; for(let r=0;r<30;r++) grid[r]=new Array(colsIn(r)).fill(null);
+    for(let r=0;r<ROWS0;r++) for(let c=0;c<colsIn(r);c++) grid[r][c]=rint(START);
+    cur=pickC(); nxt=pickC();
+    raf=requestAnimationFrame(loop);
+  }
+
+})();
+</script>
+</body>
+</html>
