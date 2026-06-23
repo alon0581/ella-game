@@ -94,10 +94,10 @@
     <button class="btn profile" data-p="dedushka">👴 Дедушка<span class="rec" id="rec-dedushka"></span></button>
     <button class="btn profile" data-p="alon">🧑 Алон<span class="rec" id="rec-alon"></span></button>
   </div>
-  <button id="gear" class="gear" title="Настройки">⚙</button>
+  <button id="gear" class="gear" title="הגדרות">⚙</button>
 </div>
 
-<div id="admin"><div id="adminBody"></div></div>
+<div id="admin" dir="rtl"><div id="adminBody"></div></div>
 <div id="hint"><span class="key">◀</span><span class="key">▶</span> выбрать &nbsp;·&nbsp; <span class="key">OK</span> подтвердить</div>
 
 <script src="photos/photos.js"></script>
@@ -465,17 +465,38 @@
 
   // ----- Players: remember each player's progress + record (localStorage) -----
   const PLAYERS = [
-    {k:"babushka", e:"👵", n:"Бабушка"},
-    {k:"dedushka", e:"👴", n:"Дедушка"},
-    {k:"alon",     e:"🧑", n:"Алон"},
+    {k:"babushka", e:"👵", n:"Бабушка", hn:"סבתא"},
+    {k:"dedushka", e:"👴", n:"Дедушка", hn:"סבא"},
+    {k:"alon",     e:"🧑", n:"Алон",    hn:"אלון"},
   ];
   function pkey(p){ return "ella_"+p; }
+  // cloud store (kvdb.io) — same progress on every device once email is verified
+  const CLOUD = "https://kvdb.io/5PDshgPETGkgVNXe2heAoG/";
+  async function cloudGet(p){ try{
+    const c=new AbortController(); const t=setTimeout(()=>c.abort(),2500);
+    const r=await fetch(CLOUD+pkey(p), {signal:c.signal}); clearTimeout(t);
+    if(r.ok){ const x=await r.text(); return x?JSON.parse(x):null; }
+  }catch(e){} return null; }
+  function cloudPut(p,data){ try{ fetch(CLOUD+pkey(p), {method:"PUT", body:JSON.stringify(data)}); }catch(e){} }
+
   function loadP(p){ try{ return JSON.parse(localStorage.getItem(pkey(p)))||{progress:0,best:0}; }catch(e){ return {progress:0,best:0}; } }
+  async function loadMerged(p){ const local=loadP(p); const cloud=await cloudGet(p);
+    if(cloud && typeof cloud.progress==="number"){
+      const m={progress:cloud.progress, best:Math.max(cloud.best||0, local.best||0)};
+      try{ localStorage.setItem(pkey(p), JSON.stringify(m)); }catch(e){}
+      return m;
+    }
+    return local; }
   function saveP(){ try{ const c=loadP(profile);
-    localStorage.setItem(pkey(profile), JSON.stringify({progress:totalCorrect, best:Math.max(totalCorrect, c.best||0)})); }catch(e){} }
+    const data={progress:totalCorrect, best:Math.max(totalCorrect, c.best||0)};
+    localStorage.setItem(pkey(profile), JSON.stringify(data));
+    cloudPut(profile, data);
+  }catch(e){} }
   function recLevel(d){ return d.best?(Math.floor(d.best/RPL)+1):0; }
-  function showRecords(){ PLAYERS.forEach(p=>{ const d=loadP(p.k);
-    const el=document.getElementById("rec-"+p.k); if(el) el.textContent = d.best?("Рекорд: уровень "+recLevel(d)):"Новый игрок"; }); }
+  async function showRecords(){ for(const p of PLAYERS){
+    let d=loadP(p.k); const cloud=await cloudGet(p.k);
+    if(cloud) d={progress:cloud.progress||0, best:Math.max(cloud.best||0, d.best||0)};
+    const el=document.getElementById("rec-"+p.k); if(el) el.textContent = d.best?("Рекорд: уровень "+recLevel(d)):"Новый игрок"; } }
 
   // start-screen focus = profile tiles + gear (flat list, d-pad navigable)
   function startFocusables(){ return [...document.querySelectorAll("#start .profile"), document.getElementById("gear")]; }
@@ -483,17 +504,17 @@
     els.forEach((el,i)=>el.classList.toggle("sel", i===startSel)); }
   function startActivate(){ const el=startFocusables()[startSel]; if(el) el.click(); }
 
-  function startGame(p){
+  async function startGame(p){
     profile = p || "babushka";
     audioOk=true; ensureAudio(); loadVoices();
-    // unlock html5 audio playback within this user gesture
+    // unlock html5 audio playback within this user gesture (sync, before any await)
     try{ const w=clip('molodets'); w.muted=true; const pr=w.play();
       if(pr&&pr.then) pr.then(()=>{ w.pause(); w.muted=false; w.currentTime=0; }).catch(()=>{ w.muted=false; }); }catch(e){}
     try{ if(window.speechSynthesis){ const u=new SpeechSynthesisUtterance(" "); u.lang="ru-RU"; speechSynthesis.speak(u);} }catch(e){}
     document.getElementById("start").style.display="none";
     const me=PLAYERS.find(x=>x.k===profile)||PLAYERS[0];
     document.getElementById("playerPill").textContent = me.e;
-    const d=loadP(profile);
+    const d=await loadMerged(profile);   // pull latest from cloud so any device continues
     totalCorrect = d.progress||0; stars=0;
     if(location.hash==="#bubble") startBubble(()=>{ newRound(false); });
     else newRound(false);
@@ -520,15 +541,15 @@
     if(d) d.textContent = "●".repeat(pinEntry.length)+"○".repeat(4-pinEntry.length); }
   function renderPin(){
     const body=document.getElementById("adminBody");
-    body.innerHTML='<h2>Введите код</h2><div class="pinDots" id="pinDots"></div><div id="keys"></div>';
+    body.innerHTML='<h2>הזן קוד</h2><div class="pinDots" id="pinDots"></div><div id="keys"></div>';
     const keys=document.getElementById("keys");
-    ["1","2","3","4","5","6","7","8","9","⌫","0","Назад"].forEach(l=>{
+    ["1","2","3","4","5","6","7","8","9","⌫","0","חזור"].forEach(l=>{
       const b=document.createElement("button"); b.className="kbtn"; b.textContent=l;
       b.addEventListener("click", ()=>pinPress(l)); keys.appendChild(b); });
     updateDots(); buildFocus(); adminFocus=0; refocus();
   }
   function pinPress(l){
-    if(l==="Назад"){ closeAdmin(); return; }
+    if(l==="חזור"){ closeAdmin(); return; }
     if(l==="⌫") pinEntry=pinEntry.slice(0,-1);
     else if(pinEntry.length<4) pinEntry+=l;
     updateDots();
@@ -537,13 +558,14 @@
       else { pinEntry=""; updateDots(); }
     }
   }
-  function resetPlayer(k){ try{ localStorage.setItem(pkey(k), JSON.stringify({progress:0,best:0})); }catch(e){} }
+  function resetPlayer(k){ const z={progress:0,best:0};
+    try{ localStorage.setItem(pkey(k), JSON.stringify(z)); }catch(e){} cloudPut(k, z); }
   function renderPanel(){
     const body=document.getElementById("adminBody");
-    let html='<h2>Сброс очков</h2><div id="alist">';
+    let html='<h2>איפוס נקודות</h2><div id="alist">';
     PLAYERS.forEach(p=>{ const d=loadP(p.k);
-      html+='<div class="arow"><span>'+p.e+" "+p.n+" — уровень "+recLevel(d)+'</span><button class="kbtn" data-rst="'+p.k+'">Сбросить</button></div>'; });
-    html+='</div><button class="kbtn" id="resetAll">Сбросить всех</button><br><button class="abtn" id="closeAdminBtn">Закрыть</button>';
+      html+='<div class="arow"><span>'+p.e+" "+p.hn+" — רמה "+recLevel(d)+'</span><button class="kbtn" data-rst="'+p.k+'">אפס</button></div>'; });
+    html+='</div><button class="kbtn" id="resetAll">אפס הכל</button><br><button class="abtn" id="closeAdminBtn">סגור</button>';
     body.innerHTML=html;
     body.querySelectorAll("[data-rst]").forEach(b=>b.addEventListener("click", ()=>{ resetPlayer(b.getAttribute("data-rst")); renderPanel(); }));
     document.getElementById("resetAll").addEventListener("click", ()=>{ PLAYERS.forEach(p=>resetPlayer(p.k)); renderPanel(); });
