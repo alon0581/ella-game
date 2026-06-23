@@ -73,6 +73,7 @@
 <div id="hint"><span class="key">◀</span><span class="key">▶</span> выбрать &nbsp;·&nbsp; <span class="key">OK</span> подтвердить</div>
 
 <script src="photos/photos.js"></script>
+<script src="audio/voices.js"></script>
 <script>
 (function(){
   "use strict";
@@ -194,7 +195,7 @@
     const opts = shuffle(
       [{html:IMG(f[1]), correct:true}].concat(others.map(o=>({html:IMG(pick(o.files)), correct:false})))
     );
-    return { top:IMG(f[0]), prompt:"Найди такой же!", voice:c.label+". Найди такой же.", options:opts };
+    return { top:IMG(f[0]), prompt:"Найди такой же!", voice:[c.label, "Найди такой же"], options:opts };
   }
 
   function mColor(def){
@@ -236,7 +237,7 @@
     const want = def.small ? Math.min(...scales) : Math.max(...scales);
     const opts = shuffle(scales.map(s=>({html:E_SC(e,s), correct:s===want})));
     const txt = def.small ? "Самый маленький" : "Самый большой";
-    return { top:null, prompt:txt, voice:"Найди: "+txt, options:opts };
+    return { top:null, prompt:txt, voice:txt, options:opts };
   }
 
   function mCount(def){
@@ -380,14 +381,38 @@
       g.gain.exponentialRampToValueAtTime(0.001,t+0.32);
       o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+0.34); });
   }
+  // Pre-recorded Russian clips (work on Android TV WebViews with no TTS); TTS = fallback.
+  const VOICES = window.VOICES || {};
+  const clipCache = {};
+  function clip(slug){ let a=clipCache[slug]; if(!a){ a=new Audio('audio/'+slug+'.mp3'); a.preload='auto'; clipCache[slug]=a; } return a; }
+  let voiceChain=null;
+  function stopVoice(){
+    if(voiceChain){ voiceChain.cancelled=true; voiceChain=null; }
+    for(const k in clipCache){ try{ clipCache[k].pause(); clipCache[k].currentTime=0; }catch(e){} }
+  }
   let ruVoice=null;
   function loadVoices(){ const vs=window.speechSynthesis?speechSynthesis.getVoices():[];
     ruVoice = vs.find(v=>/ru[-_]/i.test(v.lang)) || vs.find(v=>/russ/i.test(v.name)) || null; }
   if(window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
-  function say(text){ if(!audioOk||!window.speechSynthesis||!text) return;
+  function ttsFallback(text){ if(!window.speechSynthesis) return;
     try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text);
       u.lang="ru-RU"; if(ruVoice)u.voice=ruVoice; u.rate=0.95; u.pitch=1.05; speechSynthesis.speak(u);
     }catch(e){} }
+  function say(text){
+    if(!audioOk||!text) return;
+    const arr = Array.isArray(text)?text:[text];
+    const slugs = arr.map(t=>VOICES[t]);
+    stopVoice();
+    if(slugs.length && slugs.every(s=>s)){
+      const token={cancelled:false}; voiceChain=token; let i=0;
+      const step=()=>{ if(token.cancelled||i>=slugs.length) return;
+        const a=clip(slugs[i++]); a.currentTime=0; a.onended=step;
+        const p=a.play(); if(p&&p.catch) p.catch(()=>{}); };
+      step();
+    } else {
+      ttsFallback(arr.join(' '));
+    }
+  }
 
   // ===== Input =====
   document.addEventListener("keydown",(e)=>{
@@ -403,7 +428,10 @@
 
   function startGame(){
     audioOk=true; ensureAudio(); loadVoices();
-    try{ if(window.speechSynthesis){ const w=new SpeechSynthesisUtterance(" "); w.lang="ru-RU"; speechSynthesis.speak(w);} }catch(e){}
+    // unlock html5 audio playback within this user gesture
+    try{ const w=clip('molodets'); w.muted=true; const pr=w.play();
+      if(pr&&pr.then) pr.then(()=>{ w.pause(); w.muted=false; w.currentTime=0; }).catch(()=>{ w.muted=false; }); }catch(e){}
+    try{ if(window.speechSynthesis){ const u=new SpeechSynthesisUtterance(" "); u.lang="ru-RU"; speechSynthesis.speak(u);} }catch(e){}
     document.getElementById("start").style.display="none";
     stars=0; totalCorrect=0;
     if(location.hash==="#bubble") startBubble(()=>{ totalCorrect=0; newRound(false); });
