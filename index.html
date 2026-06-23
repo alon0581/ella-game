@@ -29,7 +29,7 @@
     line-height:1; box-shadow:0 8px 22px rgba(0,0,0,.4); overflow:hidden;
     border:1.1vh solid transparent; transition:transform .12s, border-color .12s; cursor:pointer; }
   .opt img { width:100%; height:100%; object-fit:cover; }
-  .opt.sel { border-color:#ffd23f; transform:scale(1.07); box-shadow:0 0 0 .5vh #fff, 0 12px 30px rgba(0,0,0,.5); }
+  body.kbd .opt.sel { border-color:#ffd23f; transform:scale(1.07); box-shadow:0 0 0 .5vh #fff, 0 12px 30px rgba(0,0,0,.5); }
   .opt.correct { border-color:#34c759; transform:scale(1.14); animation:pop .4s; }
   .opt.wrong { border-color:#ff4d5e; animation:shake .4s; }
   .opt.hint { animation:hintPulse 1s infinite; }
@@ -64,12 +64,12 @@
 
   #profiles { display:flex; flex-direction:column; gap:3vh; align-items:center; }
   .profile { outline:none !important; display:flex; flex-direction:column; align-items:center; gap:.4vh; min-width:42vw; }
-  .profile.sel { outline:8px solid #fff !important; transform:scale(1.04); }
+  body.kbd .profile.sel { outline:8px solid #fff !important; transform:scale(1.04); }
   .profile .rec { font-size:2.3vh; font-weight:700; color:#10254d; opacity:.65; }
   /* admin (Alon only) */
   .gear { position:fixed; top:2vh; right:3vw; font-size:3.6vh; background:rgba(255,255,255,.12); color:#fff;
     border:none; border-radius:50%; width:8vh; height:8vh; cursor:pointer; opacity:.5; }
-  .gear.sel { outline:6px solid #fff; opacity:1; }
+  body.kbd .gear.sel { outline:6px solid #fff; opacity:1; }
   #admin { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
     background:rgba(8,16,40,.96); z-index:50; text-align:center; }
   #adminBody h2 { font-size:5.5vh; margin-bottom:2vh; }
@@ -77,7 +77,7 @@
   #keys { display:flex; flex-wrap:wrap; gap:1.6vh; justify-content:center; max-width:62vw; margin:0 auto; }
   .kbtn { font-family:inherit; font-size:3.4vh; font-weight:800; color:#10254d; background:#fff; border:none;
     border-radius:1.4vh; padding:1.5vh 2.4vh; min-width:9vh; cursor:pointer; }
-  .kbtn.afocus, .abtn.afocus { outline:6px solid #ffd23f; transform:scale(1.06); }
+  body.kbd .kbtn.afocus, body.kbd .abtn.afocus { outline:6px solid #ffd23f; transform:scale(1.06); }
   .abtn { margin-top:3vh; font-family:inherit; font-size:3.2vh; font-weight:800; color:#10254d; background:#ffd23f;
     border:none; border-radius:999px; padding:1.5vh 5vh; cursor:pointer; }
   #alist { display:flex; flex-direction:column; gap:1.8vh; margin-bottom:3vh; }
@@ -196,12 +196,15 @@
     {m:"color", n:5},                 // 27
     {m:"photo", n:4},                 // 28
   ];
+  // Bubbles are hard for them — disabled for now. Flip BUBBLE_ENABLED to true to bring them back.
+  const BUBBLE_ENABLED = false;
+  const ACTIVE_LEVELS = BUBBLE_ENABLED ? LEVELS : LEVELS.filter(l => l.m !== "bubble");
   const MIX = ["same","color","odd","shadow","cat","big","count"].concat(HAS_PHOTOS?["photo","listen"]:[]);
 
   function levelIndex(tc){ return Math.floor(tc/RPL); }
   function defFor(tc){
     const i = levelIndex(tc);
-    if (i < LEVELS.length) return { def:LEVELS[i], level:i+1, mixed:false };
+    if (i < ACTIVE_LEVELS.length) return { def:ACTIVE_LEVELS[i], level:i+1, mixed:false };
     // endless mixed mode, gently scaling option count
     const n = 3 + (i % 3); // 3,4,5
     return { def:{m:pick(MIX), n:n, similar:true, small:rint(2)===0, max:4}, level:i+1, mixed:true };
@@ -459,9 +462,15 @@
   }
 
   // ===== Input =====
+  // input mode: remote/keyboard shows the focus ring; touch (phone) hides it
+  if (navigator.maxTouchPoints > 0) document.body.classList.add("touch");
+  else document.body.classList.add("kbd");
+  document.addEventListener("pointerdown", ()=>{ document.body.classList.add("touch"); document.body.classList.remove("kbd"); }, true);
+
   document.addEventListener("keydown",(e)=>{
     const k=e.key;
-    if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Enter"].includes(k)) e.preventDefault();
+    if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Enter"].includes(k)){ e.preventDefault();
+      document.body.classList.add("kbd"); document.body.classList.remove("touch"); }
     if(bubbleActive) return;
     if(adminMode){ adminKey(k); return; }
     if(document.getElementById("start").style.display!=="none"){
