@@ -52,6 +52,22 @@
   .profile { outline:none !important; display:flex; flex-direction:column; align-items:center; gap:.4vh; min-width:42vw; }
   .profile.sel { outline:8px solid #fff !important; transform:scale(1.04); }
   .profile .rec { font-size:2.3vh; font-weight:700; color:#10254d; opacity:.65; }
+  /* admin (Alon only) */
+  .gear { position:fixed; top:2vh; right:3vw; font-size:3.6vh; background:rgba(255,255,255,.12); color:#fff;
+    border:none; border-radius:50%; width:8vh; height:8vh; cursor:pointer; opacity:.5; }
+  .gear.sel { outline:6px solid #fff; opacity:1; }
+  #admin { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(8,16,40,.96); z-index:50; text-align:center; }
+  #adminBody h2 { font-size:5.5vh; margin-bottom:2vh; }
+  .pinDots { font-size:6vh; letter-spacing:1.2vh; margin-bottom:3vh; }
+  #keys { display:flex; flex-wrap:wrap; gap:1.6vh; justify-content:center; max-width:62vw; margin:0 auto; }
+  .kbtn { font-family:inherit; font-size:3.4vh; font-weight:800; color:#10254d; background:#fff; border:none;
+    border-radius:1.4vh; padding:1.5vh 2.4vh; min-width:9vh; cursor:pointer; }
+  .kbtn.afocus, .abtn.afocus { outline:6px solid #ffd23f; transform:scale(1.06); }
+  .abtn { margin-top:3vh; font-family:inherit; font-size:3.2vh; font-weight:800; color:#10254d; background:#ffd23f;
+    border:none; border-radius:999px; padding:1.5vh 5vh; cursor:pointer; }
+  #alist { display:flex; flex-direction:column; gap:1.8vh; margin-bottom:3vh; }
+  .arow { display:flex; align-items:center; gap:3vw; font-size:3vh; justify-content:space-between; min-width:62vw; }
   .confetti { position:fixed; font-size:5vh; pointer-events:none; z-index:40; will-change:transform,opacity; }
   #hint { position:fixed; bottom:1.2vh; left:0; right:0; text-align:center; font-size:2.2vh; opacity:.5; }
   .key{ display:inline-block; background:#fff; color:#10254d; border-radius:7px; padding:.1vh 1.2vh; font-weight:800; margin:0 .3vh;}
@@ -76,8 +92,12 @@
   <div id="profiles">
     <button class="btn profile sel" data-p="babushka">👵 Бабушка<span class="rec" id="rec-babushka"></span></button>
     <button class="btn profile" data-p="dedushka">👴 Дедушка<span class="rec" id="rec-dedushka"></span></button>
+    <button class="btn profile" data-p="alon">🧑 Алон<span class="rec" id="rec-alon"></span></button>
   </div>
+  <button id="gear" class="gear" title="Настройки">⚙</button>
 </div>
+
+<div id="admin"><div id="adminBody"></div></div>
 <div id="hint"><span class="key">◀</span><span class="key">▶</span> выбрать &nbsp;·&nbsp; <span class="key">OK</span> подтвердить</div>
 
 <script src="photos/photos.js"></script>
@@ -429,11 +449,13 @@
     const k=e.key;
     if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Enter"].includes(k)) e.preventDefault();
     if(bubbleActive) return;
+    if(adminMode){ adminKey(k); return; }
     if(document.getElementById("start").style.display!=="none"){
-      if(k==="ArrowDown"||k==="ArrowRight"){ startSel=1; updateProfileSel(); }
-      else if(k==="ArrowUp"||k==="ArrowLeft"){ startSel=0; updateProfileSel(); }
-      else if(k==="Enter"||k===" ") startGame(startSel===1?"dedushka":"babushka");
-      return;
+      const n=startFocusables().length;
+      if(k==="ArrowDown"||k==="ArrowRight") startSel=(startSel+1)%n;
+      else if(k==="ArrowUp"||k==="ArrowLeft") startSel=(startSel-1+n)%n;
+      else if(k==="Enter"||k===" "){ startActivate(); return; }
+      updateProfileSel(); return;
     }
     if(k==="ArrowLeft"||k==="ArrowUp") move(-1);
     else if(k==="ArrowRight"||k==="ArrowDown") move(1);
@@ -442,15 +464,24 @@
   window.addEventListener("resize", ()=>{ if(bubbleActive) return; if(spec) render(); });
 
   // ----- Players: remember each player's progress + record (localStorage) -----
+  const PLAYERS = [
+    {k:"babushka", e:"👵", n:"Бабушка"},
+    {k:"dedushka", e:"👴", n:"Дедушка"},
+    {k:"alon",     e:"🧑", n:"Алон"},
+  ];
   function pkey(p){ return "ella_"+p; }
   function loadP(p){ try{ return JSON.parse(localStorage.getItem(pkey(p)))||{progress:0,best:0}; }catch(e){ return {progress:0,best:0}; } }
   function saveP(){ try{ const c=loadP(profile);
     localStorage.setItem(pkey(profile), JSON.stringify({progress:totalCorrect, best:Math.max(totalCorrect, c.best||0)})); }catch(e){} }
-  function showRecords(){ ["babushka","dedushka"].forEach(p=>{ const d=loadP(p);
-    const lvl=d.best?(Math.floor(d.best/RPL)+1):0;
-    const el=document.getElementById("rec-"+p); if(el) el.textContent = d.best?("Рекорд: уровень "+lvl):"Новый игрок"; }); }
-  function updateProfileSel(){ const b=document.querySelectorAll(".profile");
-    b.forEach((el,i)=>el.classList.toggle("sel", i===startSel)); }
+  function recLevel(d){ return d.best?(Math.floor(d.best/RPL)+1):0; }
+  function showRecords(){ PLAYERS.forEach(p=>{ const d=loadP(p.k);
+    const el=document.getElementById("rec-"+p.k); if(el) el.textContent = d.best?("Рекорд: уровень "+recLevel(d)):"Новый игрок"; }); }
+
+  // start-screen focus = profile tiles + gear (flat list, d-pad navigable)
+  function startFocusables(){ return [...document.querySelectorAll("#start .profile"), document.getElementById("gear")]; }
+  function updateProfileSel(){ const els=startFocusables(); if(startSel>=els.length) startSel=0;
+    els.forEach((el,i)=>el.classList.toggle("sel", i===startSel)); }
+  function startActivate(){ const el=startFocusables()[startSel]; if(el) el.click(); }
 
   function startGame(p){
     profile = p || "babushka";
@@ -460,7 +491,8 @@
       if(pr&&pr.then) pr.then(()=>{ w.pause(); w.muted=false; w.currentTime=0; }).catch(()=>{ w.muted=false; }); }catch(e){}
     try{ if(window.speechSynthesis){ const u=new SpeechSynthesisUtterance(" "); u.lang="ru-RU"; speechSynthesis.speak(u);} }catch(e){}
     document.getElementById("start").style.display="none";
-    document.getElementById("playerPill").textContent = profile==="dedushka"?"👴":"👵";
+    const me=PLAYERS.find(x=>x.k===profile)||PLAYERS[0];
+    document.getElementById("playerPill").textContent = me.e;
     const d=loadP(profile);
     totalCorrect = d.progress||0; stars=0;
     if(location.hash==="#bubble") startBubble(()=>{ newRound(false); });
@@ -468,13 +500,69 @@
   }
   document.querySelectorAll(".profile").forEach(b=>
     b.addEventListener("click", ()=>startGame(b.getAttribute("data-p"))));
+  document.getElementById("gear").addEventListener("click", openAdmin);
   showRecords(); updateProfileSel();
+
+  // ----- Admin (Alon only): PIN-gated points reset -----
+  const ADMIN_PIN = "1379";
+  let adminMode=null, adminFocus=0, pinEntry="", focusEls=[];
+  function buildFocus(){ focusEls=[...document.querySelectorAll("#adminBody button")]; }
+  function refocus(){ focusEls.forEach((el,i)=>el.classList.toggle("afocus", i===adminFocus));
+    const f=focusEls[adminFocus]; if(f&&f.scrollIntoView){ try{ f.scrollIntoView({block:"nearest"}); }catch(e){} } }
+  function openAdmin(){ adminMode="pin"; pinEntry="";
+    document.getElementById("start").style.display="none";
+    document.getElementById("admin").style.display="flex"; renderPin(); }
+  function closeAdmin(){ adminMode=null;
+    document.getElementById("admin").style.display="none";
+    document.getElementById("start").style.display="flex";
+    showRecords(); startSel=0; updateProfileSel(); }
+  function updateDots(){ const d=document.getElementById("pinDots");
+    if(d) d.textContent = "●".repeat(pinEntry.length)+"○".repeat(4-pinEntry.length); }
+  function renderPin(){
+    const body=document.getElementById("adminBody");
+    body.innerHTML='<h2>Введите код</h2><div class="pinDots" id="pinDots"></div><div id="keys"></div>';
+    const keys=document.getElementById("keys");
+    ["1","2","3","4","5","6","7","8","9","⌫","0","Назад"].forEach(l=>{
+      const b=document.createElement("button"); b.className="kbtn"; b.textContent=l;
+      b.addEventListener("click", ()=>pinPress(l)); keys.appendChild(b); });
+    updateDots(); buildFocus(); adminFocus=0; refocus();
+  }
+  function pinPress(l){
+    if(l==="Назад"){ closeAdmin(); return; }
+    if(l==="⌫") pinEntry=pinEntry.slice(0,-1);
+    else if(pinEntry.length<4) pinEntry+=l;
+    updateDots();
+    if(pinEntry.length===4){
+      if(pinEntry===ADMIN_PIN){ adminMode="panel"; renderPanel(); }
+      else { pinEntry=""; updateDots(); }
+    }
+  }
+  function resetPlayer(k){ try{ localStorage.setItem(pkey(k), JSON.stringify({progress:0,best:0})); }catch(e){} }
+  function renderPanel(){
+    const body=document.getElementById("adminBody");
+    let html='<h2>Сброс очков</h2><div id="alist">';
+    PLAYERS.forEach(p=>{ const d=loadP(p.k);
+      html+='<div class="arow"><span>'+p.e+" "+p.n+" — уровень "+recLevel(d)+'</span><button class="kbtn" data-rst="'+p.k+'">Сбросить</button></div>'; });
+    html+='</div><button class="kbtn" id="resetAll">Сбросить всех</button><br><button class="abtn" id="closeAdminBtn">Закрыть</button>';
+    body.innerHTML=html;
+    body.querySelectorAll("[data-rst]").forEach(b=>b.addEventListener("click", ()=>{ resetPlayer(b.getAttribute("data-rst")); renderPanel(); }));
+    document.getElementById("resetAll").addEventListener("click", ()=>{ PLAYERS.forEach(p=>resetPlayer(p.k)); renderPanel(); });
+    document.getElementById("closeAdminBtn").addEventListener("click", closeAdmin);
+    buildFocus(); adminFocus=0; refocus();
+  }
+  function adminKey(k){
+    const n=focusEls.length; if(!n) return;
+    if(k==="ArrowRight"||k==="ArrowDown"){ adminFocus=(adminFocus+1)%n; refocus(); }
+    else if(k==="ArrowLeft"||k==="ArrowUp"){ adminFocus=(adminFocus-1+n)%n; refocus(); }
+    else if(k==="Enter"||k===" "){ const f=focusEls[adminFocus]; if(f) f.click(); }
+  }
 
   // Dev shortcut: open index.html#bubble to jump straight into the bubble level.
   if(location.hash==="#bubble"){
     document.getElementById("start").style.display="none";
     startBubble(()=>{ totalCorrect=0; newRound(false); });
   }
+  if(location.hash==="#admin"){ openAdmin(); }
 
   // ===== Bubble shooter (bonus level) =====
   // Shooter only fires colours still on the board -> as towers clear, choices
