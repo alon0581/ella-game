@@ -48,6 +48,10 @@
     border:none; border-radius:999px; padding:2.2vh 8vh; cursor:pointer;
     box-shadow:0 6px 0 #c89a00, 0 12px 26px rgba(0,0,0,.4); outline:6px solid #fff; }
 
+  #profiles { display:flex; flex-direction:column; gap:3vh; align-items:center; }
+  .profile { outline:none !important; display:flex; flex-direction:column; align-items:center; gap:.4vh; min-width:42vw; }
+  .profile.sel { outline:8px solid #fff !important; transform:scale(1.04); }
+  .profile .rec { font-size:2.3vh; font-weight:700; color:#10254d; opacity:.65; }
   .confetti { position:fixed; font-size:5vh; pointer-events:none; z-index:40; will-change:transform,opacity; }
   #hint { position:fixed; bottom:1.2vh; left:0; right:0; text-align:center; font-size:2.2vh; opacity:.5; }
   .key{ display:inline-block; background:#fff; color:#10254d; border-radius:7px; padding:.1vh 1.2vh; font-weight:800; margin:0 .3vh;}
@@ -56,6 +60,7 @@
 <body>
 <div id="app">
   <div id="hud">
+    <div class="pill" id="playerPill">👵</div>
     <div class="pill">⭐ <span id="starCount">0</span></div>
     <div class="pill">Уровень <span id="lvlCount">1</span></div>
   </div>
@@ -67,8 +72,11 @@
 <div id="feedback"></div>
 <div id="start">
   <h1>🔍 Найди такой же</h1>
-  <p>Посмотри, послушай — и выбери нужную картинку.</p>
-  <button class="btn" id="playBtn">Играть</button>
+  <p>Кто играет?</p>
+  <div id="profiles">
+    <button class="btn profile sel" data-p="babushka">👵 Бабушка<span class="rec" id="rec-babushka"></span></button>
+    <button class="btn profile" data-p="dedushka">👴 Дедушка<span class="rec" id="rec-dedushka"></span></button>
+  </div>
 </div>
 <div id="hint"><span class="key">◀</span><span class="key">▶</span> выбрать &nbsp;·&nbsp; <span class="key">OK</span> подтвердить</div>
 
@@ -119,6 +127,7 @@
 
   // ===== State =====
   let stars=0, totalCorrect=0, audioOk=false, locked=false, wrongThisRound=0, bubbleActive=false;
+  let profile='babushka', startSel=0;
   let options=[], sel=0, spec=null;
   const RPL = 3; // correct answers needed to pass a level
 
@@ -266,7 +275,7 @@
     if(info.def.m==="bubble"){
       const rows=Math.min(8, 3+Math.floor(info.level/4));     // grows: L5->4, L12->6, L19->7
       const colors=Math.min(5, 3+Math.floor(info.level/8));   // grows: L5->3, L12->4, L19->5
-      startBubble(()=>{ const li=levelIndex(totalCorrect); totalCorrect=(li+1)*RPL; stars+=3; newRound(true); }, {rows,colors});
+      startBubble(()=>{ const li=levelIndex(totalCorrect); totalCorrect=(li+1)*RPL; stars+=3; saveP(); newRound(true); }, {rows,colors});
       return;
     }
     try { spec = build(info.def); }
@@ -328,6 +337,7 @@
       const before = defFor(totalCorrect).level;
       stars++; totalCorrect++;
       const after = defFor(totalCorrect).level;
+      saveP();
       cards[sel].classList.remove("sel"); cards[sel].classList.add("correct");
       document.getElementById("starCount").textContent = stars;
       banner(pick(["Молодец!","Отлично!","Правильно!","Умница!","Прекрасно!"]), "#34c759");
@@ -419,25 +429,46 @@
     const k=e.key;
     if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Enter"].includes(k)) e.preventDefault();
     if(bubbleActive) return;
-    if(document.getElementById("start").style.display!=="none"){ if(k==="Enter"||k===" ") startGame(); return; }
+    if(document.getElementById("start").style.display!=="none"){
+      if(k==="ArrowDown"||k==="ArrowRight"){ startSel=1; updateProfileSel(); }
+      else if(k==="ArrowUp"||k==="ArrowLeft"){ startSel=0; updateProfileSel(); }
+      else if(k==="Enter"||k===" ") startGame(startSel===1?"dedushka":"babushka");
+      return;
+    }
     if(k==="ArrowLeft"||k==="ArrowUp") move(-1);
     else if(k==="ArrowRight"||k==="ArrowDown") move(1);
     else if(k==="Enter"||k===" ") choose();
   });
   window.addEventListener("resize", ()=>{ if(bubbleActive) return; if(spec) render(); });
 
-  function startGame(){
+  // ----- Players: remember each player's progress + record (localStorage) -----
+  function pkey(p){ return "ella_"+p; }
+  function loadP(p){ try{ return JSON.parse(localStorage.getItem(pkey(p)))||{progress:0,best:0}; }catch(e){ return {progress:0,best:0}; } }
+  function saveP(){ try{ const c=loadP(profile);
+    localStorage.setItem(pkey(profile), JSON.stringify({progress:totalCorrect, best:Math.max(totalCorrect, c.best||0)})); }catch(e){} }
+  function showRecords(){ ["babushka","dedushka"].forEach(p=>{ const d=loadP(p);
+    const lvl=d.best?(Math.floor(d.best/RPL)+1):0;
+    const el=document.getElementById("rec-"+p); if(el) el.textContent = d.best?("Рекорд: уровень "+lvl):"Новый игрок"; }); }
+  function updateProfileSel(){ const b=document.querySelectorAll(".profile");
+    b.forEach((el,i)=>el.classList.toggle("sel", i===startSel)); }
+
+  function startGame(p){
+    profile = p || "babushka";
     audioOk=true; ensureAudio(); loadVoices();
     // unlock html5 audio playback within this user gesture
     try{ const w=clip('molodets'); w.muted=true; const pr=w.play();
       if(pr&&pr.then) pr.then(()=>{ w.pause(); w.muted=false; w.currentTime=0; }).catch(()=>{ w.muted=false; }); }catch(e){}
     try{ if(window.speechSynthesis){ const u=new SpeechSynthesisUtterance(" "); u.lang="ru-RU"; speechSynthesis.speak(u);} }catch(e){}
     document.getElementById("start").style.display="none";
-    stars=0; totalCorrect=0;
-    if(location.hash==="#bubble") startBubble(()=>{ totalCorrect=0; newRound(false); });
+    document.getElementById("playerPill").textContent = profile==="dedushka"?"👴":"👵";
+    const d=loadP(profile);
+    totalCorrect = d.progress||0; stars=0;
+    if(location.hash==="#bubble") startBubble(()=>{ newRound(false); });
     else newRound(false);
   }
-  document.getElementById("playBtn").addEventListener("click", startGame);
+  document.querySelectorAll(".profile").forEach(b=>
+    b.addEventListener("click", ()=>startGame(b.getAttribute("data-p"))));
+  showRecords(); updateProfileSel();
 
   // Dev shortcut: open index.html#bubble to jump straight into the bubble level.
   if(location.hash==="#bubble"){
@@ -458,10 +489,9 @@
     const ctx=cv.getContext("2d");
     const PAL=["#ff4d5e","#ffd23f","#34c759","#3aa0ff","#c46bff"];
     const DARK=["#b3263a","#c89a00","#1f8a3c","#1f6fbf","#8a3fcf"];
-    const COLS=7, SPEEDK=0.5, AIMSTEP=1.6;
+    const COLS=7, SPEEDK=0.5, STEP=4;   // STEP deg per d-pad press (small = precise)
     const START=Math.min(5, opts.colors||4), ROWS0=Math.min(9, opts.rows||4);
     let R,ROWH,W,H,TOP,PW,OFF, grid=[], aim=90, cur=0, nxt=0, shot=null, pops=[], raf=0, won=false;
-    const held={l:false,r:false};
 
     const colsIn=r=>(r&1)?COLS-1:COLS;
     const gx=(r,c)=>OFF+R+((r&1)?R:0)+c*2*R;
@@ -528,29 +558,34 @@
       if(!hit){ outer: for(let r=0;r<grid.length;r++) for(let c=0;c<grid[r].length;c++) if(grid[r][c]!=null){
         const dx=shot.x-gx(r,c),dy=shot.y-gy(r); if(dx*dx+dy*dy<(R*1.85)*(R*1.85)){hit=true;break outer;} } }
       if(hit) snap(); }
-    function loop(){ if(!bubbleActive)return;
-      if(!won){ if(held.l) aim=Math.min(162,aim+AIMSTEP); if(held.r) aim=Math.max(18,aim-AIMSTEP); }
-      update(); draw(); raf=requestAnimationFrame(loop); }
+    function loop(){ if(!bubbleActive)return; update(); draw(); raf=requestAnimationFrame(loop); }
 
     function win(){ if(won)return; won=true; shot=null;
       banner("Молодец! 🎉","#34c759"); say("Молодец"); chime(true); confetti(40);
       setTimeout(()=>{ cleanup(); onWin(); }, 1600); }
     function cleanup(){ bubbleActive=false; cancelAnimationFrame(raf);
-      window.removeEventListener("keydown",kd,true); window.removeEventListener("keyup",ku,true);
-      window.removeEventListener("resize",rsz); cv.remove(); }
+      window.removeEventListener("keydown",kd,true); window.removeEventListener("resize",rsz); cv.remove(); }
 
+    // Remote: each press nudges the aim a small, precise step (robust on TVs
+    // that don't reliably send keyup). Hold = OS auto-repeat moves it gently.
     function kd(e){ const k=e.key;
       if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Enter"].includes(k)) e.preventDefault();
-      if(k==="ArrowLeft"||k==="ArrowUp") held.l=true;
-      else if(k==="ArrowRight"||k==="ArrowDown") held.r=true;
+      if(k==="ArrowLeft") aim=Math.min(162,aim+STEP);
+      else if(k==="ArrowRight") aim=Math.max(18,aim-STEP);
+      else if(k==="ArrowUp") aim=aim<90?Math.min(90,aim+STEP):Math.max(90,aim-STEP); // up = straighten
       else if(k==="Enter"||k===" ") fire(); }
-    function ku(e){ const k=e.key;
-      if(k==="ArrowLeft"||k==="ArrowUp") held.l=false;
-      else if(k==="ArrowRight"||k==="ArrowDown") held.r=false; }
+    // Phone/touch: tap where you want to shoot — aim there and fire.
+    function aimTo(px,py){ const sx=OFF+PW/2, sy=H-R*2.2;
+      let a=Math.atan2(sy-py, px-sx)*180/Math.PI; aim=Math.max(18,Math.min(162,a)); }
+    function pd(e){ const r=cv.getBoundingClientRect();
+      const px=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+      const py=(e.touches?e.touches[0].clientY:e.clientY)-r.top;
+      if(py < H-R*3.2){ aimTo(px,py); fire(); }  // ignore taps right on the shooter
+    }
     const rsz=()=>resize();
     window.addEventListener("keydown",kd,true);
-    window.addEventListener("keyup",ku,true);
     window.addEventListener("resize",rsz);
+    cv.addEventListener("pointerdown",pd);
 
     resize();
     grid=[]; for(let r=0;r<30;r++) grid[r]=new Array(colsIn(r)).fill(null);
