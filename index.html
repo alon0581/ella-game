@@ -470,14 +470,14 @@
     {k:"alon",     e:"🧑", n:"Алон",    hn:"אלון"},
   ];
   function pkey(p){ return "ella_"+p; }
-  // cloud store (kvdb.io) — same progress on every device once email is verified
-  const CLOUD = "https://kvdb.io/5PDshgPETGkgVNXe2heAoG/";
+  // cloud store (Firebase Realtime DB) — same progress on every device
+  const CLOUD = "https://ella-game-7ac2f-default-rtdb.firebaseio.com/ella/";
   async function cloudGet(p){ try{
     const c=new AbortController(); const t=setTimeout(()=>c.abort(),2500);
-    const r=await fetch(CLOUD+pkey(p), {signal:c.signal}); clearTimeout(t);
-    if(r.ok){ const x=await r.text(); return x?JSON.parse(x):null; }
+    const r=await fetch(CLOUD+p+".json", {signal:c.signal}); clearTimeout(t);
+    if(r.ok){ const x=await r.text(); return (x && x!=="null")?JSON.parse(x):null; }
   }catch(e){} return null; }
-  function cloudPut(p,data){ try{ fetch(CLOUD+pkey(p), {method:"PUT", body:JSON.stringify(data)}); }catch(e){} }
+  function cloudPut(p,data){ try{ fetch(CLOUD+p+".json", {method:"PUT", body:JSON.stringify(data)}); }catch(e){} }
 
   function loadP(p){ try{ return JSON.parse(localStorage.getItem(pkey(p)))||{progress:0,best:0}; }catch(e){ return {progress:0,best:0}; } }
   async function loadMerged(p){ const local=loadP(p); const cloud=await cloudGet(p);
