@@ -22,13 +22,16 @@
   #targetWrap { flex:0 0 auto; display:flex; align-items:center; justify-content:center; margin-top:.3vh; min-height:1vh; }
   #target { border-radius:5vh; background:#fff; display:flex; align-items:center; justify-content:center;
     line-height:1; box-shadow:0 10px 30px rgba(0,0,0,.45); overflow:hidden; }
-  #target img { width:100%; height:100%; object-fit:cover; }
+  #target img { width:100%; height:100%; object-fit:contain; padding:6%; }
 
-  #options { flex:1 1 auto; display:flex; align-items:center; justify-content:center; padding:2vh 3vw 4vh; }
+  #divider { width:92%; max-width:1000px; height:0; border-top:0.4vh solid rgba(255,255,255,.22);
+    margin:1vh auto 0; min-height:2px; }
+  #options { flex:1 1 auto; display:flex; flex-wrap:wrap; align-items:center; align-content:center; justify-content:center;
+    margin:0 auto; padding:2.5vh 3vw 4vh; }
   .opt { border-radius:5vh; background:#fff; display:flex; align-items:center; justify-content:center;
     line-height:1; box-shadow:0 8px 22px rgba(0,0,0,.4); overflow:hidden;
     border:1.1vh solid transparent; transition:transform .12s, border-color .12s; cursor:pointer; }
-  .opt img { width:100%; height:100%; object-fit:cover; }
+  .opt img { width:100%; height:100%; object-fit:contain; padding:6%; }
   body.kbd .opt.sel { border-color:#ffd23f; transform:scale(1.07); box-shadow:0 0 0 .5vh #fff, 0 12px 30px rgba(0,0,0,.5); }
   .opt.correct { border-color:#34c759; transform:scale(1.14); animation:pop .4s; }
   .opt.wrong { border-color:#ff4d5e; animation:shake .4s; }
@@ -96,6 +99,7 @@
   </div>
   <div id="prompt">Найди такой&nbsp;же!</div>
   <div id="targetWrap"><div id="target"></div></div>
+  <div id="divider"></div>
   <div id="options"></div>
 </div>
 
@@ -324,30 +328,38 @@
     say(spec.voice);
   }
 
-  function sizes(n){
-    const vw=window.innerWidth, vh=window.innerHeight;
-    const gap = vw*0.035;
-    const size = Math.floor(Math.min(vh*0.26, (vw*0.92 - gap*(n-1))/n));
-    return { size:Math.max(size,80), gap };
+  function layout(n){
+    const vw=window.innerWidth, vh=window.innerHeight, portrait = vh >= vw;
+    // phone (portrait): max 2 per row so cards stay big and don't shrink; TV (landscape): one row
+    const cols = portrait ? Math.min(n,2) : n;
+    const rows = Math.ceil(n/cols);
+    const gap = Math.min(vw,vh)*0.03;
+    const byW = (vw*0.94 - gap*(cols-1))/cols;
+    const byH = (vh*(portrait?0.46:0.52) - gap*(rows-1))/rows;
+    const size = Math.max(72, Math.floor(Math.min(byW, byH, Math.min(vw,vh)*0.52)));
+    return { size, gap, cols };
   }
 
   function render(){
     const n = options.length;
-    const {size,gap} = sizes(n);
-    // target
-    const tw = document.getElementById("targetWrap");
+    const {size,gap,cols} = layout(n);
+    const portrait = window.innerHeight >= window.innerWidth;
+    // target (top) + divider
     const tg = document.getElementById("target");
+    const dv = document.getElementById("divider");
     if(spec.top){
-      const ts = Math.min(Math.floor(size*1.12), Math.floor(window.innerHeight*0.27));
+      const ts = Math.min(Math.floor(size*1.1), Math.floor(window.innerHeight*(portrait?0.24:0.27)), Math.floor(window.innerWidth*0.5));
       tg.style.width=ts+"px"; tg.style.height=ts+"px"; tg.style.display="flex";
       tg.innerHTML = spec.top(ts);
-      tw.style.minHeight = "";
+      dv.style.display="";
     } else {
       tg.style.display="none";
+      dv.style.display="none";
     }
-    // options
+    // options (bottom) — wrap to `cols` per row
     const box = document.getElementById("options");
     box.style.gap = gap+"px";
+    box.style.maxWidth = (cols*size + (cols-1)*gap) + "px";
     box.innerHTML = "";
     options.forEach((o,i)=>{
       const d=document.createElement("div");
