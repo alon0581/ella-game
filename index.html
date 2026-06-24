@@ -26,8 +26,10 @@
 
   #divider { width:92%; max-width:1000px; height:0; border-top:0.4vh solid rgba(255,255,255,.22);
     margin:1vh auto 0; min-height:2px; }
-  #options { flex:1 1 auto; display:flex; flex-wrap:wrap; align-items:center; align-content:center; justify-content:center;
+  #options { flex:1 1 auto; display:grid; align-content:center; justify-content:center;
     margin:0 auto; padding:1.5vh 3vw 2vh; }
+  #dbg { position:fixed; top:0; left:0; font:bold 12px monospace; color:#fff; background:rgba(200,0,0,.8);
+    z-index:9999; padding:2px 6px; display:none; white-space:nowrap; }
   .opt { border-radius:5vh; background:#fff; display:flex; align-items:center; justify-content:center;
     line-height:1; box-shadow:0 8px 22px rgba(0,0,0,.4); overflow:hidden;
     border:1.1vh solid transparent; transition:transform .12s, border-color .12s; cursor:pointer; }
@@ -101,6 +103,7 @@
   <div id="targetWrap"><div id="target"></div></div>
   <div id="divider"></div>
   <div id="options"></div>
+  <div id="dbg"></div>
 </div>
 
 <div id="feedback"></div>
@@ -345,18 +348,21 @@
     } else {
       tg.style.display="none"; dv.style.display="none";
     }
-    // options — MEASURE the real remaining height so the bottom row is never cut off
+    // options — CSS Grid with a FIXED number of columns (deterministic, no flex-wrap jitter),
+    // measured to fit the real remaining height so the bottom row is never cut off.
     const box = document.getElementById("options");
-    box.innerHTML = ""; box.style.maxWidth = "none";
+    box.innerHTML = "";
     const rect = box.getBoundingClientRect();
     const cs = getComputedStyle(box);
     const padV = (parseFloat(cs.paddingTop)||0) + (parseFloat(cs.paddingBottom)||0);
     const availH = vh - rect.top - padV - 6;
-    const byW = (vw*0.94 - gap*(cols-1))/cols;
+    const byW = (vw*0.92 - gap*(cols-1))/cols;
     const byH = (availH - gap*(rows-1))/rows;
-    const size = Math.max(60, Math.floor(Math.min(byW, byH)));
+    const size = Math.max(56, Math.floor(Math.min(byW, byH)));
+    box.style.gridTemplateColumns = "repeat("+cols+", "+size+"px)";
+    box.style.gridAutoRows = size+"px";
     box.style.gap = gap+"px";
-    box.style.maxWidth = (cols*size + (cols-1)*gap) + "px";
+    box.style.justifyContent = "center"; box.style.alignContent = "center";
     options.forEach((o,i)=>{
       const d=document.createElement("div");
       d.className="opt"+(i===sel?" sel":"");
@@ -366,6 +372,10 @@
       box.appendChild(d);
     });
     document.getElementById("starCount").textContent = stars;
+    const dbg=document.getElementById("dbg");
+    if(dbg){ if(location.hash.indexOf("dbg")>=0){ dbg.style.display="block";
+        dbg.textContent = vw+"x"+vh+" dpr"+window.devicePixelRatio+" n"+n+" c"+cols+" r"+rows+" s"+size+" aH"+Math.round(availH)+" top"+Math.round(rect.top);
+      } else dbg.style.display="none"; }
   }
 
   function move(dir){
