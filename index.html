@@ -523,6 +523,23 @@
   }catch(e){} return null; }
   function cloudPut(p,data){ try{ fetch(CLOUD+p+".json", {method:"PUT", body:JSON.stringify(data)}); }catch(e){} }
 
+  // --- usage tracking (presence + sessions) for the parent dashboard ---
+  const FB = "https://ella-game-7ac2f-default-rtdb.firebaseio.com/";
+  let sessionKey=null, sessionStart=0, hbTimer=null;
+  function fbPatch(path,data){ try{ fetch(FB+path+".json",{method:"PATCH",body:JSON.stringify(data)}); }catch(e){} }
+  function heartbeat(){ const me=PLAYERS.find(x=>x.k===profile)||{};
+    fbPatch("presence/"+profile, {lastSeen:Date.now(), level:defFor(totalCorrect).level, name:me.hn||profile}); }
+  function trackStart(){
+    const lvl=defFor(totalCorrect).level; sessionStart=Date.now(); sessionKey=null;
+    try{ fetch(FB+"sessions/"+profile+".json",{method:"POST",
+      body:JSON.stringify({start:sessionStart, levelStart:lvl, end:sessionStart, levelEnd:lvl, stars:0})})
+      .then(r=>r.ok?r.json():null).then(j=>{ if(j&&j.name) sessionKey=j.name; }).catch(()=>{}); }catch(e){}
+    heartbeat(); if(hbTimer) clearInterval(hbTimer); hbTimer=setInterval(heartbeat, 20000);
+  }
+  function trackProgress(){ const lvl=defFor(totalCorrect).level;
+    if(sessionKey) fbPatch("sessions/"+profile+"/"+sessionKey, {end:Date.now(), levelEnd:lvl, stars:stars});
+    fbPatch("presence/"+profile, {lastSeen:Date.now(), level:lvl}); }
+
   function loadP(p){ try{ return JSON.parse(localStorage.getItem(pkey(p)))||{progress:0,best:0}; }catch(e){ return {progress:0,best:0}; } }
   async function loadMerged(p){ const local=loadP(p); const cloud=await cloudGet(p);
     if(cloud && typeof cloud.progress==="number"){
@@ -535,6 +552,7 @@
     const data={progress:totalCorrect, best:Math.max(totalCorrect, c.best||0)};
     localStorage.setItem(pkey(profile), JSON.stringify(data));
     cloudPut(profile, data);
+    trackProgress();
   }catch(e){} }
   function recLevel(d){ return d.best?(Math.floor(d.best/RPL)+1):0; }
   async function showRecords(){ for(const p of PLAYERS){
@@ -560,6 +578,7 @@
     document.getElementById("playerPill").textContent = me.e;
     const d=await loadMerged(profile);   // pull latest from cloud so any device continues
     totalCorrect = d.progress||0; stars=0;
+    trackStart();
     if(location.hash==="#bubble") startBubble(()=>{ newRound(false); });
     else newRound(false);
   }

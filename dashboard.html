@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>דשבורד — המשחק של סבתא</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{font-family:"Segoe UI",Arial,sans-serif;background:#0f1f44;color:#fff;min-height:100vh}
+  .wrap{max-width:760px;margin:0 auto;padding:3vw}
+  h1{font-size:6vw;margin:2vw 0;text-align:center}
+  @media(min-width:600px){h1{font-size:30px}.wrap{padding:18px}}
+  .card{background:#17285a;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  .phead{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:800;margin-bottom:6px}
+  .dot{width:13px;height:13px;border-radius:50%;display:inline-block;flex:0 0 auto}
+  .on{background:#34c759;box-shadow:0 0 10px #34c759}.off{background:#6b7280}
+  .sub{opacity:.8;font-size:15px;margin-bottom:10px}
+  .stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .pill{background:rgba(255,255,255,.08);border-radius:999px;padding:5px 12px;font-size:14px;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:right;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08)}
+  th{opacity:.6;font-weight:600}
+  .muted{opacity:.55;text-align:center;padding:8px}
+  .reminders{background:#17285a;border-radius:16px;padding:16px;margin-bottom:14px}
+  .reminders input{font-family:inherit;font-size:16px;padding:8px 10px;border-radius:10px;border:none;width:100%;margin:6px 0}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .btn{font-family:inherit;font-weight:800;font-size:16px;color:#0f1f44;background:#ffd23f;border:none;border-radius:999px;padding:9px 22px;cursor:pointer}
+  .small{font-size:13px;opacity:.7}
+  #gate{position:fixed;inset:0;background:#0f1f44;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:10}
+  #gate input{font-size:28px;text-align:center;letter-spacing:8px;width:180px;padding:10px;border-radius:12px;border:none}
+  .timechip{background:rgba(255,255,255,.1);border-radius:999px;padding:6px 12px;font-weight:700;display:inline-flex;gap:8px;align-items:center}
+  .timechip b{font-size:16px}.timechip span{cursor:pointer;opacity:.7}
+  .note{font-size:13px;opacity:.6;margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="gate">
+  <h1>🔒 דשבורד</h1>
+  <input id="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="קוד">
+  <button class="btn" onclick="checkPin()">כניסה</button>
+</div>
+
+<div class="wrap" id="app" style="display:none">
+  <h1>📊 המשחק של סבתא</h1>
+  <div id="players"></div>
+
+  <div class="reminders">
+    <div style="font-size:18px;font-weight:800;margin-bottom:8px">🔔 שעות תזכורת</div>
+    <div class="small" style="margin-bottom:8px">שעות שבהן תישלח התראה "זמן לשחק". (יפעל אחרי הגדרת ה‑Push.)</div>
+    <div class="row" id="timeChips"></div>
+    <div class="row" style="margin-top:10px">
+      <input id="newTime" type="time" style="width:auto;flex:1" value="17:00">
+      <button class="btn" onclick="addTime()">הוסף שעה</button>
+    </div>
+    <div style="margin-top:10px">
+      <input id="msg" type="text" placeholder="הודעת התזכורת (רוסית)">
+    </div>
+    <button class="btn" style="margin-top:10px" onclick="saveReminders()">שמור</button>
+    <span id="savedMsg" class="small" style="margin-right:10px"></span>
+  </div>
+  <div class="small" style="text-align:center" id="updated"></div>
+</div>
+
+<script>
+const FB="https://ella-game-7ac2f-default-rtdb.firebaseio.com/";
+const PIN="1379";
+const PLAYERS=[{k:"babushka",e:"👵",n:"סבתא"},{k:"dedushka",e:"👴",n:"סבא"},{k:"alon",e:"🧑",n:"אלון"}];
+const RPL=3;
+
+function checkPin(){ if(document.getElementById("pin").value===PIN){ sessionStorage.setItem("dash","1"); showApp(); } else { document.getElementById("pin").value=""; } }
+function showApp(){ document.getElementById("gate").style.display="none"; document.getElementById("app").style.display="block"; load(); setInterval(load,15000); }
+if(sessionStorage.getItem("dash")==="1") showApp();
+document.getElementById("pin").addEventListener("keydown",e=>{if(e.key==="Enter")checkPin();});
+
+async function fbGet(path){ try{ const r=await fetch(FB+path+".json"); if(r.ok){const t=await r.text(); return t&&t!=="null"?JSON.parse(t):null;} }catch(e){} return null; }
+
+function fmtTime(ts){ const d=new Date(ts); return d.toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"}); }
+function fmtDate(ts){ const d=new Date(ts), n=new Date();
+  const same=d.toDateString()===n.toDateString();
+  const y=new Date(n-86400000).toDateString()===d.toDateString();
+  if(same) return "היום"; if(y) return "אתמול"; return d.toLocaleDateString("he-IL",{day:"2-digit",month:"2-digit"}); }
+function fmtDur(ms){ const s=Math.round(ms/1000); if(s<60) return s+" שנ'"; const m=Math.floor(s/60); const r=s%60; return r? m+"."+String(r).padStart(2,"0")+" דק'" : m+" דק'"; }
+function ago(ms){ const s=Math.round(ms/1000); if(s<60) return "לפני "+s+" שנ'"; const m=Math.floor(s/60); if(m<60) return "לפני "+m+" דק'"; const h=Math.floor(m/60); if(h<24) return "לפני "+h+" שע'"; return "לפני "+Math.floor(h/24)+" ימים"; }
+
+async function load(){
+  const presence=await fbGet("presence")||{};
+  const sessionsAll=await fbGet("sessions")||{};
+  const now=Date.now();
+  let html="";
+  for(const p of PLAYERS){
+    const pres=presence[p.k];
+    const online = pres && (now-(pres.lastSeen||0) < 70000);
+    let sess=sessionsAll[p.k] ? Object.values(sessionsAll[p.k]) : [];
+    sess.sort((a,b)=>b.start-a.start);
+    // today totals
+    const today=sess.filter(s=>new Date(s.start).toDateString()===new Date().toDateString());
+    const todayMs=today.reduce((t,s)=>t+Math.max(0,(s.end||s.start)-s.start),0);
+    const todayLvls=today.reduce((t,s)=>t+Math.max(0,(s.levelEnd||0)-(s.levelStart||0)),0);
+    let rows="";
+    sess.slice(0,12).forEach(s=>{
+      const dur=Math.max(0,(s.end||s.start)-s.start);
+      const lv=Math.max(0,(s.levelEnd||0)-(s.levelStart||0));
+      rows+=`<tr><td>${fmtDate(s.start)} ${fmtTime(s.start)}</td><td>${fmtDur(dur)}</td><td>${lv} שלבים</td><td>⭐${s.stars||0}</td></tr>`;
+    });
+    if(!rows) rows=`<tr><td colspan="4" class="muted">עדיין לא שיחק</td></tr>`;
+    html+=`<div class="card">
+      <div class="phead"><span class="dot ${online?'on':'off'}"></span>${p.e} ${p.n}
+        <span class="small" style="margin-right:auto">${online?'אונליין עכשיו':(pres?ago(now-pres.lastSeen):'לא נראה')}</span></div>
+      <div class="stats">
+        <span class="pill">רמה נוכחית: ${pres?pres.level||1:'-'}</span>
+        <span class="pill">היום: ${fmtDur(todayMs)}</span>
+        <span class="pill">שלבים היום: ${todayLvls}</span>
+        <span class="pill">סשנים היום: ${today.length}</span>
+      </div>
+      <table><tr><th>מתי</th><th>משך</th><th>התקדמות</th><th>כוכבים</th></tr>${rows}</table>
+    </div>`;
+  }
+  document.getElementById("players").innerHTML=html;
+  document.getElementById("updated").textContent="עודכן "+fmtTime(now);
+  loadReminders();
+}
+
+let reminderTimes=[];
+async function loadReminders(){
+  if(document.activeElement && ["newTime","msg"].includes(document.activeElement.id)) return; // don't clobber while editing
+  const r=await fbGet("config/reminders");
+  reminderTimes=(r&&r.times)||[];
+  renderChips();
+  const msg=document.getElementById("msg"); if(document.activeElement!==msg) msg.value=(r&&r.message)||"Пора играть! 🎮";
+}
+function renderChips(){
+  document.getElementById("timeChips").innerHTML = reminderTimes.length
+    ? reminderTimes.map((t,i)=>`<span class="timechip"><b>${t}</b><span onclick="rmTime(${i})">✕</span></span>`).join("")
+    : `<span class="small">אין שעות מוגדרות</span>`;
+}
+function addTime(){ const t=document.getElementById("newTime").value; if(t&&!reminderTimes.includes(t)){ reminderTimes.push(t); reminderTimes.sort(); renderChips(); } }
+function rmTime(i){ reminderTimes.splice(i,1); renderChips(); }
+async function saveReminders(){
+  const body={times:reminderTimes, message:document.getElementById("msg").value};
+  try{ await fetch(FB+"config/reminders.json",{method:"PUT",body:JSON.stringify(body)});
+    const m=document.getElementById("savedMsg"); m.textContent="✓ נשמר"; setTimeout(()=>m.textContent="",2000);
+  }catch(e){}
+}
+</script>
+</body>
+</html>
