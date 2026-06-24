@@ -371,6 +371,9 @@
       d.addEventListener("click", ()=>{ if(!locked){ sel=i; choose(); } });
       box.appendChild(d);
     });
+    // odd count on a 2-column grid (e.g. 3 or 5): center the lone last card
+    if(cols===2 && (n%2)===1){ const last=box.lastElementChild;
+      if(last){ last.style.gridColumn="1 / -1"; last.style.justifySelf="center"; } }
     document.getElementById("starCount").textContent = stars;
     const dbg=document.getElementById("dbg");
     if(dbg){ if(location.hash.indexOf("dbg")>=0){ dbg.style.display="block";
